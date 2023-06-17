@@ -12,4 +12,4 @@
       })
   })
 
-})(jQuery3 || jQuery)
+})(jQuery)
