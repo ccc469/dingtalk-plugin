@@ -142,6 +142,7 @@ public class DingTalkNotifierConfig extends AbstractDescribableImpl<DingTalkNoti
         public String getDefaultContent() {
             return Utils.join(
                     Arrays.asList(
+                            "- 分支：${GIT_BRANCH}",
                             "- 提交人：${GIT_AUTHOR}",
                             "- 提交时间：${GIT_AT_TIME} (${GIT_AT})",
                             "- Commit ID：${GIT_SHORT_COMMIT_ID}",
