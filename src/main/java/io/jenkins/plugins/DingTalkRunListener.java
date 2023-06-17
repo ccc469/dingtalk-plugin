@@ -3,15 +3,10 @@ package io.jenkins.plugins;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.Extension;
-import hudson.model.Cause;
+import hudson.model.*;
 import hudson.model.Cause.RemoteCause;
 import hudson.model.Cause.UpstreamCause;
 import hudson.model.Cause.UserIdCause;
-import hudson.model.Job;
-import hudson.model.Result;
-import hudson.model.Run;
-import hudson.model.TaskListener;
-import hudson.model.User;
 import hudson.model.listeners.RunListener;
 import io.jenkins.plugins.context.PipelineEnvContext;
 import io.jenkins.plugins.enums.BuildStatusEnum;
@@ -25,14 +20,17 @@ import io.jenkins.plugins.service.impl.DingTalkServiceImpl;
 import io.jenkins.plugins.tools.DingTalkUtils;
 import io.jenkins.plugins.tools.Logger;
 import io.jenkins.plugins.tools.Utils;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import lombok.extern.log4j.Log4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 所有项目触发
@@ -211,7 +209,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 	}
 
 	private boolean skip(TaskListener listener, NoticeOccasionEnum noticeOccasion,
-			DingTalkNotifierConfig notifierConfig) {
+						 DingTalkNotifierConfig notifierConfig) {
 		String stage = noticeOccasion.name();
 		Set<String> noticeOccasions = notifierConfig.getNoticeOccasions();
 		if (noticeOccasions.contains(stage)) {
@@ -230,7 +228,6 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 			DingTalkUtils.log(listener, "当前任务未配置机器人，已跳过");
 			return;
 		}
-
 		// 环境变量
 		EnvVars envVars = getEnvVars(run, listener);
 
@@ -247,6 +244,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 		String jobName = run.getDisplayName();
 		String jobUrl = rootPath + run.getUrl();
 		String duration = run.getDurationString();
+		String buildTime = new SimpleDateFormat("yyyy年MM月dd HH时mm分ss秒").format(new Date());
 		BuildStatusEnum statusType = getBuildStatus(noticeOccasion);
 
 		// 设置环境变量
@@ -258,10 +256,41 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 		envVars.put("JOB_URL", jobUrl);
 		envVars.put("JOB_DURATION", duration);
 		envVars.put("JOB_STATUS", statusType.getLabel());
+		envVars.put("BUILD_TIME", buildTime);
+
+
+		// 项目目录
+		String projectDir = job.getRootDir().getAbsolutePath().replace("jobs", "workspace");
+		envVars.put("PROJECT_DIR", projectDir);
+
+		try {
+			// 获取git提交信息
+			String[] gitPullCmd;
+			if (envVars.containsKey("gitlabBranch")) {
+				envVars.put("GIT_BRANCH", envVars.get("gitlabBranch"));
+				gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + projectDir + " && git pull origin " + envVars.get("gitlabBranch")};
+			} else {
+				gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + projectDir + " && git pull"};
+			}
+			// 此处需要拉取一下代码, 才能获取到最新的提交信息
+			execCommandWithPrintOut(gitPullCmd);
+
+			Map<GitStats, String> gitStats = getGitStats(projectDir);
+			envVars.put("GIT_AUTHOR", gitStats.get(GitStats.Author));
+			envVars.put("GIT_AT", gitStats.get(GitStats.At));
+			envVars.put("GIT_AT_TIME", gitStats.get(GitStats.AtTime));
+			envVars.put("GIT_COMMIT_ID", gitStats.get(GitStats.CommitId));
+			envVars.put("GIT_SHORT_COMMIT_ID", gitStats.get(GitStats.ShortCommitId));
+			envVars.put("GIT_MESSAGE", gitStats.get(GitStats.Message));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 
 		List<ButtonModel> btns = Utils.createDefaultBtns(jobUrl);
 		List<String> result = new ArrayList<>();
 		List<DingTalkNotifierConfig> notifierConfigs = property.getAvailableNotifierConfigs();
+		DingTalkNotifierConfig.DingTalkNotifierConfigDescriptor descriptor = Jenkins.get().getDescriptorByType(DingTalkNotifierConfig.DingTalkNotifierConfigDescriptor.class);
+		String defaultContent = descriptor.getDefaultContent();
 
 		for (DingTalkNotifierConfig item : notifierConfigs) {
 			boolean skipped = skip(listener, noticeOccasion, item);
@@ -271,7 +300,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 			}
 
 			String robotId = item.getRobotId();
-			String content = item.getContent();
+			String content = StringUtils.isEmpty(item.getContent()) ? defaultContent : item.getContent();
 			String message = item.getMessage();
 			boolean atAll = item.isAtAll();
 			Set<String> atMobiles = item.resolveAtMobiles(envVars);
@@ -287,27 +316,28 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 									envVars.expand(message).replace("\\\\n", "\n")
 							).build()
 							: MessageModel.builder()
-									.type(MsgTypeEnum.ACTION_CARD)
-									.atAll(atAll)
-									.atMobiles(atMobiles)
-									.title(
-											String.format("%s %s", projectName, statusType.getLabel())
-									)
-									.text(
-											BuildJobModel.builder().projectName(projectName).projectUrl(projectUrl)
-													.jobName(jobName)
-													.jobUrl(jobUrl)
-													.statusType(statusType)
-													.duration(duration)
-													.executorName(executorName)
-													.executorMobile(executorMobile)
-													.content(
-															envVars.expand(content).replace("\\\\n", "\n")
-													)
-													.build()
-													.toMarkdown()
-									)
-									.btns(btns).build();
+							.type(MsgTypeEnum.ACTION_CARD)
+							.atAll(atAll)
+							.atMobiles(atMobiles)
+							.title(
+									String.format("%s %s", projectName, statusType.getLabel())
+							)
+							.text(
+									BuildJobModel.builder().projectName(projectName).projectUrl(projectUrl)
+											.buildTime(buildTime)
+											.jobName(jobName)
+											.jobUrl(jobUrl)
+											.statusType(statusType)
+											.duration(duration)
+											.executorName(executorName)
+											.executorMobile(executorMobile)
+											.content(
+													envVars.expand(content).replace("\\\\n", "\n")
+											)
+											.build()
+											.toMarkdown()
+							)
+							.btns(btns).build();
 
 			DingTalkUtils.log(listener, "当前机器人信息，%s", Utils.toJson(item));
 			DingTalkUtils.log(listener, "发送的消息详情，%s", Utils.toJson(message));
@@ -322,5 +352,107 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
 		if (!result.isEmpty()) {
 			result.forEach(msg -> Logger.error(listener, msg));
 		}
+	}
+
+	private enum GitStats {
+		/**
+		 * 完整Hash
+		 */
+		CommitId,
+		/**
+		 * 简短Hash
+		 */
+		ShortCommitId,
+		/**
+		 * 作者
+		 */
+		Author,
+		/**
+		 * 提交时间
+		 */
+		At,
+		/**
+		 * 提交时间
+		 */
+		AtTime,
+		/**
+		 * 提交信息
+		 */
+		Message,
+	}
+
+	/**
+	 * 获取git提交信息
+	 *
+	 * @return
+	 */
+
+	private static Map<GitStats, String> getGitStats(String projectDir) {
+		String[] commitIdCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%H' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
+		String[] shortCommitCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%h' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
+		String[] authorCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%an' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
+		String[] atCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ar' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
+		String[] atTimeCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ad' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
+		String[] messageCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%s%B' HEAD -1"};
+		return new HashMap<GitStats, String>() {{
+			put(GitStats.CommitId, execCommand(commitIdCmd));
+			put(GitStats.ShortCommitId, execCommand(shortCommitCmd));
+			put(GitStats.Author, execCommand(authorCmd));
+			put(GitStats.At, execCommand(atCmd));
+			put(GitStats.AtTime, execCommand(atTimeCmd));
+			put(GitStats.Message, execCommandReplaceOut(messageCmd, "\n", "<br>"));
+		}};
+	}
+
+	/**
+	 * 执行命令并得到返回结果
+	 *
+	 * @param command
+	 * @return
+	 */
+	private static String execCommand(String[] command) {
+		StringBuilder output = new StringBuilder();
+		try {
+			Process ps = Runtime.getRuntime().exec(command);
+			BufferedReader br = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+			String line;
+			while ((line = br.readLine()) != null) {
+				output.append(line).append("\n");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return output.toString().replaceAll("\n", "");
+	}
+
+	private static String execCommandWithPrintOut(String[] command) {
+		StringBuilder output = new StringBuilder();
+		try {
+			Process ps = Runtime.getRuntime().exec(command);
+			BufferedReader br = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+			String line;
+			while ((line = br.readLine()) != null) {
+				System.out.println(line);
+				output.append(line).append("\n");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return output.toString();
+	}
+
+	private static String execCommandReplaceOut(String[] command, String from, String to) {
+		StringBuilder output = new StringBuilder();
+		try {
+			Process ps = Runtime.getRuntime().exec(command);
+			BufferedReader br = new BufferedReader(new InputStreamReader(ps.getInputStream()));
+			String line;
+			while ((line = br.readLine()) != null) {
+				output.append(line).append("\n");
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return output.toString().replaceAll(from, to);
 	}
 }

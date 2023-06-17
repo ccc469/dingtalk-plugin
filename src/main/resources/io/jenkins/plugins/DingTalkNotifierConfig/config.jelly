@@ -47,7 +47,7 @@
 					<f:textarea field="atMobile"/>
 				</f:entry>
 				<f:entry field="content" title="自定义内容">
-					<f:textarea/>
+					<f:textarea value="${descriptor.getDefaultContent()}"/>
 				</f:entry>
 			</div>
 		</f:advanced>

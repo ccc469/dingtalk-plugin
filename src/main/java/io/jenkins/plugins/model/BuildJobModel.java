@@ -32,12 +32,15 @@ public class BuildJobModel {
 
   private String content;
 
+  private String buildTime;
+
   public String toMarkdown() {
 
     return Utils.join(
         Arrays.asList(
             String.format("# [%s](%s)", projectName, projectUrl),
             "---",
+            String.format("- 时间：%s", buildTime),
             String.format("- 任务：[%s](%s)", jobName, jobUrl),
             String.format("- 状态：%s",
                 Utils.dye(
