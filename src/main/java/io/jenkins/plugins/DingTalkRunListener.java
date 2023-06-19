@@ -395,7 +395,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
         String[] authorCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%an' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
         String[] atCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ar' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
         String[] atTimeCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ad' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
-        String[] messageCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%s%B' HEAD -1"};
+        String[] messageCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%B' HEAD -1 | sort | uniq"};
         return new HashMap<GitStats, String>() {{
             put(GitStats.CommitId, execCommand(commitIdCmd));
             put(GitStats.ShortCommitId, execCommand(shortCommitCmd));
