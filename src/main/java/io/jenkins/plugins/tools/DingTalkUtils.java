@@ -12,7 +12,7 @@ public class DingTalkUtils {
         boolean verbose = globalConfig.isVerbose();
         if (verbose) {
             // Logger.line(listener, LineType.START);
-            Logger.debug(listener, "[钉钉插件]" + formatMsg, args);
+            Logger.debug(listener, "[钉钉插件] " + formatMsg, args);
             // Logger.line(listener, LineType.END);
         }
     }
@@ -21,7 +21,7 @@ public class DingTalkUtils {
         DingTalkGlobalConfig globalConfig = DingTalkGlobalConfig.getInstance();
         boolean verbose = globalConfig.isVerbose();
         if (verbose) {
-            log.info("[钉钉插件]" + message, args);
+            log.info("[钉钉插件] " + message, args);
         }
     }
 }

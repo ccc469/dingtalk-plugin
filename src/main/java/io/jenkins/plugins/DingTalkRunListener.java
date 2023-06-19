@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
@@ -47,7 +48,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
     @Override
     public void onStarted(Run<?, ?> run, TaskListener listener) {
         DingTalkGlobalConfig globalConfig = DingTalkGlobalConfig.getInstance();
-        log.info("全局配置信息，{}", Utils.toJson(globalConfig));
+        DingTalkUtils.log("全局配置信息，{}", Utils.toJson(globalConfig));
         this.send(run, listener, NoticeOccasionEnum.START);
     }
 
@@ -113,7 +114,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
                 String name = user.getDisplayName();
                 String mobile = user.getProperty(DingTalkUserProperty.class).getMobile();
                 if (StringUtils.isEmpty(mobile)) {
-                    log.info(
+                    DingTalkUtils.log(
                             "用户【{}】暂未设置手机号码，请前往 {} 添加。",
                             name,
                             user.getAbsoluteUrl() + "/configure"
@@ -211,7 +212,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
         if (noticeOccasions.contains(stage)) {
             return false;
         }
-        log.info("机器人 {} 已跳过 {} 环节", notifierConfig.getRobotName(), stage);
+        DingTalkUtils.log("机器人 {} 已跳过 {} 环节", notifierConfig.getRobotName(), stage);
         return true;
     }
 
@@ -254,25 +255,30 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
         envVars.put("JOB_STATUS", statusType.getLabel());
         envVars.put("BUILD_TIME", buildTime);
 
-
         // 项目目录
         String projectDir = job.getRootDir().getAbsolutePath().replace("jobs", "workspace");
+        // Git源代码文件目录
+        String gitFileDir = projectDir;
+        if (envVars.containsKey("GIT_CHECKOUT_DIR") && StringUtils.isNotEmpty(envVars.get("GIT_CHECKOUT_DIR"))) {
+            gitFileDir  += File.separator + envVars.get("GIT_CHECKOUT_DIR");
+        }
         envVars.put("PROJECT_DIR", projectDir);
+        envVars.put("GIT_FILE_DIR", gitFileDir);
 
         try {
             // 获取git提交信息
             String[] gitPullCmd;
             if (envVars.containsKey("gitlabBranch")) {
                 envVars.put("GIT_BRANCH", envVars.get("gitlabBranch"));
-                gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + projectDir + " && git pull origin " + envVars.get("gitlabBranch")};
+                gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + gitFileDir + " && git pull origin " + envVars.get("gitlabBranch")};
             } else {
-                gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + projectDir + " && git pull"};
+                gitPullCmd = new String[]{"/bin/sh", "-c", " cd " + gitFileDir + " && git pull"};
             }
             // 此处需要拉取一下代码, 才能获取到最新的提交信息
             execCommandWithPrintOut(gitPullCmd);
 
-            Map<GitStats, String> gitStats = getGitStats(projectDir);
-            DingTalkUtils.log("{} gitStats: {}", statusType.getLabel(), gitStats);
+            Map<GitStats, String> gitStats = getGitStats(gitFileDir);
+            DingTalkUtils.log("gitStats: {}", gitStats);
             envVars.put("GIT_AUTHOR", gitStats.get(GitStats.Author));
             envVars.put("GIT_AT", gitStats.get(GitStats.At));
             envVars.put("GIT_AT_TIME", gitStats.get(GitStats.AtTime));
@@ -336,8 +342,8 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
                             )
                             .btns(btns).build();
 
-            DingTalkUtils.log("{} 当前机器人信息，\n{}", statusType.getLabel(), Utils.toJson(item));
-            DingTalkUtils.log("{} 发送的消息详情，\n{}", statusType.getLabel(), Utils.toJson(msgModel));
+            DingTalkUtils.log("当前机器人信息，\n{}", Utils.toJson(item));
+            DingTalkUtils.log("发送的消息详情，\n{}", Utils.toJson(msgModel));
 
             String msg = service.send(robotId, msgModel);
             if (msg != null) {
