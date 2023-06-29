@@ -260,10 +260,12 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
         // Git源代码文件目录
         String gitFileDir = projectDir;
         if (envVars.containsKey("GIT_CHECKOUT_DIR") && StringUtils.isNotEmpty(envVars.get("GIT_CHECKOUT_DIR"))) {
-            gitFileDir  += File.separator + envVars.get("GIT_CHECKOUT_DIR");
+            gitFileDir += File.separator + envVars.get("GIT_CHECKOUT_DIR");
         }
         envVars.put("PROJECT_DIR", projectDir);
         envVars.put("GIT_FILE_DIR", gitFileDir);
+
+        String gitDiffReviewUrl = "";
 
         try {
             // 获取git提交信息
@@ -285,6 +287,9 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
             envVars.put("GIT_COMMIT_ID", gitStats.get(GitStats.CommitId));
             envVars.put("GIT_SHORT_COMMIT_ID", gitStats.get(GitStats.ShortCommitId));
             envVars.put("GIT_MESSAGE", gitStats.get(GitStats.Message));
+
+            gitDiffReviewUrl =  gitStats.get(GitStats.GitRemoteUrl).replaceAll(":", "/").replace("git@", "https://").replace(".git", "/commit/") + gitStats.get(GitStats.CommitId);
+            envVars.put("GIT_DIFF_REVIEW_URL", gitDiffReviewUrl);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -328,6 +333,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
                             .text(
                                     BuildJobModel.builder().projectName(projectName).projectUrl(projectUrl)
                                             .buildTime(buildTime)
+                                            .gitDiffReviewUrl(gitDiffReviewUrl)
                                             .jobName(jobName)
                                             .jobUrl(jobUrl)
                                             .statusType(statusType)
@@ -381,6 +387,10 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
          * 提交信息
          */
         Message,
+        /**
+         * 获取远程地址
+         */
+        GitRemoteUrl
     }
 
     /**
@@ -396,6 +406,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
         String[] atCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ar' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
         String[] atTimeCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%ad' --date=format:'%Y-%m-%d %H:%M:%S' HEAD -1"};
         String[] messageCmd = {"/bin/sh", "-c", " cd " + projectDir + " && git log --pretty=format:'%B' HEAD -1 | sort | uniq"};
+        String[] gitRemoteUrl = {"/bin/sh", "-c", " cd " + projectDir + " && git ls-remote --get-url origin | sort | uniq"};
         return new HashMap<GitStats, String>() {{
             put(GitStats.CommitId, execCommand(commitIdCmd));
             put(GitStats.ShortCommitId, execCommand(shortCommitCmd));
@@ -403,6 +414,7 @@ public class DingTalkRunListener extends RunListener<Run<?, ?>> {
             put(GitStats.At, execCommand(atCmd));
             put(GitStats.AtTime, execCommand(atTimeCmd));
             put(GitStats.Message, execCommandReplaceOut(messageCmd, "\n", "<br>"));
+            put(GitStats.GitRemoteUrl, execCommand(gitRemoteUrl));
         }};
     }
 

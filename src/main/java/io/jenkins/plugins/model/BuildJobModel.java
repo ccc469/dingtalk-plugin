@@ -36,6 +36,8 @@ public class BuildJobModel {
 
     private String buildTime;
 
+    private String gitDiffReviewUrl;
+
     public String toMarkdown() {
         return Utils.join(
                 Arrays.asList(
@@ -51,6 +53,7 @@ public class BuildJobModel {
                         ),
                         String.format("- 持续时间：%s", duration),
                         String.format("- 执行人：%s", executorName),
+                        String.format("- 预览代码：[点击前往](%s)", gitDiffReviewUrl),
                         content == null ? "" : content
                 )
         );
