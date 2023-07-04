@@ -9,3 +9,12 @@
 ## Contributing
 
  [🍻　Contributing](./CONTRIBUTING.md)
+
+
+### 环境要求
+- JDK 11+
+- Maven
+
+```text
+当Jenkins首次启动之后需要安装Jquery3相关的扩展
+```
